@@ -1,0 +1,16 @@
+# Environment configuration (CRITICAL to ignore)
+.env
+.env.*
+*.env
+
+# Dependencies
+node_modules/
+backend/venv/
+__pycache__/
+
+# Build outputs
+frontend/dist/
+
+# OS generated files
+.DS_Store
+Thumbs.db

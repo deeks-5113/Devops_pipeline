@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: devops_dashboard_frontend
+    ports:
+      - "8710:8710"
+    restart: unless-stopped
+    depends_on:
+      - backend
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: devops_dashboard_backend
+    ports:
+      - "8720:8720"
+    volumes:
+      # Zero-Trust Bridge: Mount the host machine's docker socket 
+      # so the Python subprocess can query the host's actual containers.
+      - /var/run/docker.sock:/var/run/docker.sock
+      
+      # Mount the scripts folder natively
+      - ./scripts:/opt/deployment-scripts
+      
+      # Important: If your `redeploy.sh` needs to run `docker compose` or `git pull` 
+      # against a host directory, you might need to mount the host repo into the container too.
+      - .:/host-repo
+    env_file:
+      - ./backend/.env
+    restart: unless-stopped
