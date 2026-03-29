@@ -180,7 +180,7 @@ def get_system_stats(current_user: str = Depends(get_current_user)):
 def get_containers(current_user: str = Depends(get_current_user)):
     try:
         ps_result = subprocess.run(
-            ["docker", "ps", "--format", '{"Names":"{{.Names}}", "Status":"{{.Status}}", "Ports":"{{.Ports}}"}'],
+            ["docker", "ps", "-a", "--format", '{"Names":"{{.Names}}", "Status":"{{.Status}}", "Ports":"{{.Ports}}"}'],
             capture_output=True, text=True, check=True,
         )
         stats_result = subprocess.run(
