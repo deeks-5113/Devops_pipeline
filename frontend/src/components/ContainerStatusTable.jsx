@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Box, TerminalSquare } from 'lucide-react';
 import LogViewerModal from './LogViewerModal';
+import api from '../lib/axios';
 
 const ContainerStatusTable = () => {
   const [containers, setContainers] = useState([]);
@@ -12,13 +13,16 @@ const ContainerStatusTable = () => {
     
     const fetchContainers = async () => {
       try {
-        // Mock Implementation
-        await new Promise(resolve => setTimeout(resolve, 500));
+        const { data } = await api.get('/api/stats/containers');
         if (isMounted) {
-          setContainers([
-            { name: "backend_container", status: "Up 2 days", ports: "4000:4000", isHealthy: true },
-            { name: "frontend_container", status: "Up 2 days", ports: "3000:80", isHealthy: true }
-          ]);
+          setContainers(data.map(c => ({
+            name: c.name,
+            status: c.status,
+            ports: c.ports,
+            isHealthy: c.status.toLowerCase().includes('up'),
+            cpu_perc: c.cpu_perc,
+            mem_usage: c.mem_usage
+          })));
         }
       } catch (error) {
         console.error("Failed to fetch containers", error);
@@ -49,7 +53,8 @@ const ContainerStatusTable = () => {
             <tr>
               <th className="px-6 py-4">Status</th>
               <th className="px-6 py-4">Name</th>
-              <th className="px-6 py-4">Uptime</th>
+              <th className="px-6 py-4">Status & Uptime</th>
+              <th className="px-6 py-4 text-[var(--color-dark-muted)]">CPU / RAM</th>
               <th className="px-6 py-4">Ports</th>
               <th className="px-6 py-4 text-right">Actions</th>
             </tr>
@@ -75,6 +80,10 @@ const ContainerStatusTable = () => {
                   </td>
                   <td className="px-6 py-4 font-medium text-slate-200">{container.name}</td>
                   <td className="px-6 py-4 text-[var(--color-dark-muted)]">{container.status}</td>
+                  <td className="px-6 py-4 text-xs font-mono text-[var(--color-dark-muted)]">
+                     <span className="text-emerald-400 mr-2">{container.cpu_perc}</span>
+                     <span className="text-blue-400">{container.mem_usage}</span>
+                  </td>
                   <td className="px-6 py-4 font-mono text-xs text-[var(--color-dark-muted)]">{container.ports}</td>
                   <td className="px-6 py-4 text-right">
                     <button 

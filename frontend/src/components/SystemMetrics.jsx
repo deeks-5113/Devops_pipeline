@@ -10,22 +10,19 @@ const SystemMetrics = () => {
     
     const fetchMetrics = async () => {
       try {
-        // Mock Implementation for immediate development UX:
+        const { data } = await axios.get('/api/stats/system');
         if (isMounted) {
-          // Simulation of 10s poll varying values smoothly
-          setMetrics(prev => ({ 
-            cpu_percent: Math.max(10, Math.min(100, prev.cpu_percent + (Math.random() * 20 - 10))), 
-            ram_percent: Math.max(20, Math.min(100, prev.ram_percent + (Math.random() * 10 - 5))), 
-            disk_free_gb: 12.5 
-          }));
+          setMetrics({ 
+            cpu_percent: data.cpu_percent, 
+            ram_percent: data.ram_percent, 
+            disk_free_gb: data.disk_free_gb 
+          });
         }
       } catch (error) {
         console.error("Failed to fetch metrics", error);
       }
     };
 
-    // Initial seed 
-    setMetrics({ cpu_percent: 45.2, ram_percent: 62.1, disk_free_gb: 12.5 });
 
     const interval = setInterval(fetchMetrics, 10000);
 

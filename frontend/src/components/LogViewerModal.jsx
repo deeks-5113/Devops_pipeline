@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Terminal, X } from 'lucide-react';
+import api from '../lib/axios';
 
 const LogViewerModal = ({ containerName, onClose }) => {
   const [logs, setLogs] = useState('');
@@ -11,18 +12,10 @@ const LogViewerModal = ({ containerName, onClose }) => {
 
     const fetchLogs = async () => {
       try {
-        // Mock Implementation based on requirements
-        await new Promise(resolve => setTimeout(resolve, 800));
+        const { data } = await api.get(`/api/logs/${containerName}`);
         
         if (isMounted) {
-          const mockLogs = `[INFO] Starting container ${containerName}...
-[INFO] Loading dependencies...
-[WARN] Deprecated feature used in app.js:42
-[INFO] Server started on port ${containerName === 'backend_container' ? '4000' : '3000'}
-[INFO] Database connected successfully.
-[INFO] Listening for connections...
-`;
-          setLogs(mockLogs);
+          setLogs(data.logs || "No logs output returned by daemon.");
         }
       } catch (error) {
         if (isMounted) setLogs(`Error fetching logs for ${containerName}`);

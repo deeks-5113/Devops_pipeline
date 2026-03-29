@@ -9,9 +9,7 @@ const ActionPanel = () => {
   const [isExecuting, setIsExecuting] = useState(false);
 
   const actions = [
-    { id: 'deploy_backend', label: 'Deploy Backend', icon: Play, color: 'text-emerald-500', bgHover: 'hover:bg-emerald-500/10' },
-    { id: 'deploy_frontend', label: 'Deploy Frontend', icon: Play, color: 'text-blue-500', bgHover: 'hover:bg-blue-500/10' },
-    { id: 'restart_nginx', label: 'Restart Nginx', icon: RotateCw, color: 'text-amber-500', bgHover: 'hover:bg-amber-500/10', destructive: true },
+    { id: 'redeploy', label: 'Redeploy All Containers', icon: RotateCw, color: 'text-amber-500', bgHover: 'hover:bg-amber-500/10', destructive: true },
   ];
 
   const handleActionClick = (action) => {
@@ -24,9 +22,7 @@ const ActionPanel = () => {
     
     setIsExecuting(true);
     try {
-      // Mocking the API based on requested contracts
-      // const res = await axios.post(`/api/actions/${selectedAction.id}`);
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      await axios.post(`/api/actions/${selectedAction.id}`);
       
       toast.success(`${selectedAction.label} executed successfully`);
     } catch (error) {

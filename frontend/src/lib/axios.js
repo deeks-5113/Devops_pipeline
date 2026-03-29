@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 const api = axios.create({
-  baseURL: '/',
+  baseURL: `${window.location.protocol}//${window.location.hostname}:8720`,
   timeout: 10000,
 });
 
