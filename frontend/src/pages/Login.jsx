@@ -15,16 +15,10 @@ const Login = () => {
     setIsLoading(true);
 
     try {
-      if (username === 'admin' && password === 'admin') {
-         localStorage.setItem('auth_token', 'mock_token_123');
-         toast.success('Login successful');
-         navigate('/');
-      } else {
-         const res = await axios.post('/api/auth/login', { username, password });
-         localStorage.setItem('auth_token', res.data.token);
-         toast.success('Login successful');
-         navigate('/');
-      }
+      const res = await axios.post('/api/auth/login', { username, password });
+      localStorage.setItem('auth_token', res.data.access_token); // ✅ correct key
+      toast.success('Login successful');
+      navigate('/');
     } catch (err) {
       toast.error('Invalid credentials or backend unavailable');
     } finally {
