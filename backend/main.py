@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import List, Optional
 import os
@@ -12,39 +13,42 @@ from passlib.context import CryptContext
 from dotenv import load_dotenv
 import re
 import json
-import shlex
 import hashlib
+import uuid
+from pathlib import Path
 
-# Ensure we load env variables from .env
 load_dotenv()
 
-# App Security Settings from Env
 SECRET_KEY = os.getenv("SECRET_KEY", "09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7")
 ALGORITHM = os.getenv("ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
 ADMIN_USER = os.getenv("ADMIN_USER")
-# Store plaintext password in env - Python hashes it at runtime, bypassing
-# the $ interpolation issue that corrupts bcrypt hashes in .env files
 ADMIN_PASS = os.getenv("ADMIN_PASS")
+
+# Containers that cannot be stopped/restarted/redeployed via the dashboard
+PROTECTED_CONTAINERS = {"devops_dashboard_backend", "devops_dashboard_frontend"}
+
+# Path to host repo (bind-mounted in docker-compose.yml as .:/host-repo)
+DEPLOY_DIR = "/host-repo"
+GROUPS_FILE = Path(DEPLOY_DIR) / "groups.json"
 
 app = FastAPI(title="Deployment Dashboard API")
 
-# Setup CORS for the React frontend, allowing localhost
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # Wildcard allows ANY server IP now
-    allow_credentials=False, # Must be False for wildcard (*) to work in CORS
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
-ALLOWED_ACTIONS = {
-    "redeploy": "/opt/deployment-scripts/redeploy.sh"
-}
 
-# --- Models ---
+# ---------------------------------------------------------------------------
+# Pydantic Models
+# ---------------------------------------------------------------------------
+
 class LoginRequest(BaseModel):
     username: str
     password: str
@@ -69,28 +73,41 @@ class ActionResponse(BaseModel):
     status: str
     output: str
 
-class LogResponse(BaseModel):
-    logs: str
+class Group(BaseModel):
+    id: str
+    name: str
+    containers: List[str] = []
 
-# --- Security Functions ---
+class GroupCreate(BaseModel):
+    name: str
+    containers: List[str] = []
+
+class GroupUpdate(BaseModel):
+    name: Optional[str] = None
+    containers: Optional[List[str]] = None
+
+
+# ---------------------------------------------------------------------------
+# Security Helpers
+# ---------------------------------------------------------------------------
+
 def verify_password(plain_password: str, stored_password: str) -> bool:
-    """Compare passwords using SHA256 to avoid bcrypt $ env interpolation issues."""
+    """SHA256 comparison — avoids bcrypt $ env-interpolation issues."""
     if not stored_password:
         return False
-    # Hash both sides so we never compare plaintext directly
-    incoming = hashlib.sha256(plain_password.encode()).hexdigest()
-    expected = hashlib.sha256(stored_password.encode()).hexdigest()
-    return incoming == expected
+    return (
+        hashlib.sha256(plain_password.encode()).hexdigest()
+        == hashlib.sha256(stored_password.encode()).hexdigest()
+    )
 
 def create_access_token(data: dict):
     to_encode = data.copy()
     expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-    return encoded_jwt
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 async def get_current_user(token: str = Depends(oauth2_scheme)):
-    credentials_exception = HTTPException(
+    exc = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
@@ -99,15 +116,42 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         username: str = payload.get("sub")
         if username is None:
-            raise credentials_exception
+            raise exc
     except JWTError:
-        raise credentials_exception
-    
+        raise exc
     if username != ADMIN_USER:
-        raise credentials_exception
+        raise exc
     return username
 
-# --- Endpoints ---
+
+# ---------------------------------------------------------------------------
+# Groups File Helpers
+# ---------------------------------------------------------------------------
+
+def load_groups() -> List[dict]:
+    if not GROUPS_FILE.exists():
+        return []
+    try:
+        return json.loads(GROUPS_FILE.read_text())
+    except (json.JSONDecodeError, IOError):
+        return []
+
+def save_groups(groups: List[dict]):
+    GROUPS_FILE.write_text(json.dumps(groups, indent=2))
+
+
+# ---------------------------------------------------------------------------
+# Validation Helper
+# ---------------------------------------------------------------------------
+
+def validate_container_name(name: str):
+    if not re.match(r"^[a-zA-Z0-9_-]+$", name):
+        raise HTTPException(status_code=400, detail="Invalid container name format.")
+
+
+# ---------------------------------------------------------------------------
+# Auth
+# ---------------------------------------------------------------------------
 
 @app.post("/api/auth/login", response_model=Token)
 async def login(req: LoginRequest):
@@ -116,107 +160,195 @@ async def login(req: LoginRequest):
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
         )
-    access_token = create_access_token(data={"sub": req.username})
-    return {"access_token": access_token, "token_type": "bearer"}
+    return {"access_token": create_access_token({"sub": req.username}), "token_type": "bearer"}
+
+
+# ---------------------------------------------------------------------------
+# Stats
+# ---------------------------------------------------------------------------
 
 @app.get("/api/stats/system", response_model=SystemMetrics)
 def get_system_stats(current_user: str = Depends(get_current_user)):
-    disk_usage = psutil.disk_usage('/')
+    disk = psutil.disk_usage("/")
     return SystemMetrics(
         cpu_percent=psutil.cpu_percent(interval=None),
         ram_percent=psutil.virtual_memory().percent,
-        disk_free_gb=round(disk_usage.free / (1024 ** 3), 2)
+        disk_free_gb=round(disk.free / (1024 ** 3), 2),
     )
 
 @app.get("/api/stats/containers", response_model=List[ContainerInfo])
 def get_containers(current_user: str = Depends(get_current_user)):
     try:
-        # Get basic container info (ps)
         ps_result = subprocess.run(
             ["docker", "ps", "--format", '{"Names":"{{.Names}}", "Status":"{{.Status}}", "Ports":"{{.Ports}}"}'],
-            capture_output=True, text=True, check=True
+            capture_output=True, text=True, check=True,
         )
-        
-        # Get container stats (CPU/RAM)
         stats_result = subprocess.run(
             ["docker", "stats", "--no-stream", "--format", '{"Name":"{{.Name}}", "CPUPerc":"{{.CPUPerc}}", "MemUsage":"{{.MemUsage}}"}'],
-            capture_output=True, text=True, check=True
+            capture_output=True, text=True, check=True,
         )
-        
-        # Parse stats into a dictionary mapped by container name
-        stats_map = {}
+        stats_map: dict = {}
         for line in stats_result.stdout.strip().split("\n"):
-            if not line: continue
+            if not line:
+                continue
             try:
-                data = json.loads(line)
-                stats_map[data.get("Name", "")] = data
+                d = json.loads(line)
+                stats_map[d.get("Name", "")] = d
             except json.JSONDecodeError:
                 continue
 
-        # Merge ps and stats data
         containers = []
         for line in ps_result.stdout.strip().split("\n"):
             if not line:
                 continue
             try:
-                data = json.loads(line)
-                name = data.get("Names", "")
-                c_stat = stats_map.get(name, {})
+                d = json.loads(line)
+                name = d.get("Names", "")
+                st = stats_map.get(name, {})
                 containers.append(ContainerInfo(
                     name=name,
-                    status=data.get("Status", ""),
-                    ports=data.get("Ports", ""),
-                    cpu_perc=c_stat.get("CPUPerc", "N/A"),
-                    mem_usage=c_stat.get("MemUsage", "N/A")
+                    status=d.get("Status", ""),
+                    ports=d.get("Ports", ""),
+                    cpu_perc=st.get("CPUPerc", "N/A"),
+                    mem_usage=st.get("MemUsage", "N/A"),
                 ))
             except json.JSONDecodeError:
                 continue
         return containers
     except subprocess.CalledProcessError:
-         raise HTTPException(status_code=500, detail="Failed to retrieve docker container stats")
+        raise HTTPException(status_code=500, detail="Failed to retrieve docker container stats.")
     except FileNotFoundError:
-         raise HTTPException(status_code=500, detail="Docker daemon is not available or installed")
+        raise HTTPException(status_code=500, detail="Docker daemon not available.")
 
-@app.post("/api/actions/{action_id}", response_model=ActionResponse)
-def execute_action(action_id: str, current_user: str = Depends(get_current_user)):
-    # 1. Check if action_id exists in ALLOWED_ACTIONS
-    if action_id not in ALLOWED_ACTIONS:
-        raise HTTPException(status_code=400, detail="Invalid action_id")
-        
-    script_to_run = ALLOWED_ACTIONS[action_id]
-    
+
+# ---------------------------------------------------------------------------
+# Per-Container Actions
+# ---------------------------------------------------------------------------
+
+@app.post("/api/containers/{container_name}/stop", response_model=ActionResponse)
+def stop_container(container_name: str, current_user: str = Depends(get_current_user)):
+    validate_container_name(container_name)
+    if container_name in PROTECTED_CONTAINERS:
+        raise HTTPException(status_code=403, detail="This container is protected and cannot be stopped via the dashboard.")
     try:
-        # Use shlex split to correctly split commands with spaces if needed
-        # Since it's predefined and trusted, simple split is usually sufficient,
-        # but caution is taken not to use shell=True
-        cmd = shlex.split(script_to_run)
-        
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        if result.returncode != 0:
-            return ActionResponse(status="error", output=result.stderr or result.stdout)
-            
-        return ActionResponse(status="success", output=result.stdout)
+        r = subprocess.run(
+            ["docker", "compose", "stop", container_name],
+            cwd=DEPLOY_DIR, capture_output=True, text=True,
+        )
+        if r.returncode != 0:
+            return ActionResponse(status="error", output=r.stderr or r.stdout)
+        return ActionResponse(status="success", output=r.stdout or f"{container_name} stopped.")
     except Exception as e:
         return ActionResponse(status="error", output=str(e))
 
-@app.get("/api/logs/{container_name}", response_model=LogResponse)
-def get_logs(container_name: str, current_user: str = Depends(get_current_user)):
-    # Validate container_name using regex ^[a-zA-Z0-9_-]+$
-    if not re.match(r"^[a-zA-Z0-9_-]+$", container_name):
-        raise HTTPException(status_code=400, detail="Invalid container name format")
-        
-    try:
-        result = subprocess.run(
-            ["docker", "logs", "--tail", "100", container_name],
-            capture_output=True, text=True
-        )
-        # docker logs output depends on how the container logs things (stdout/stderr)
-        output = result.stdout
-        if result.stderr:
-             output += "\n" + result.stderr
 
-        return LogResponse(logs=output.strip())
-    except FileNotFoundError:
-         raise HTTPException(status_code=500, detail="Docker daemon not available")
-    except subprocess.CalledProcessError as e:
-         raise HTTPException(status_code=500, detail=f"Failed to fetch logs: {e}")
+@app.post("/api/containers/{container_name}/restart", response_model=ActionResponse)
+def restart_container(container_name: str, current_user: str = Depends(get_current_user)):
+    validate_container_name(container_name)
+    if container_name in PROTECTED_CONTAINERS:
+        raise HTTPException(status_code=403, detail="This container is protected and cannot be restarted via the dashboard.")
+    try:
+        r = subprocess.run(
+            ["docker", "compose", "restart", container_name],
+            cwd=DEPLOY_DIR, capture_output=True, text=True,
+        )
+        if r.returncode != 0:
+            return ActionResponse(status="error", output=r.stderr or r.stdout)
+        return ActionResponse(status="success", output=r.stdout or f"{container_name} restarted.")
+    except Exception as e:
+        return ActionResponse(status="error", output=str(e))
+
+
+@app.post("/api/containers/{container_name}/redeploy", response_model=ActionResponse)
+def redeploy_container(container_name: str, current_user: str = Depends(get_current_user)):
+    validate_container_name(container_name)
+    if container_name in PROTECTED_CONTAINERS:
+        raise HTTPException(status_code=403, detail="This container is protected and cannot be redeployed via the dashboard.")
+
+    log_lines: List[str] = []
+    steps = [
+        (["docker", "compose", "down", container_name], f"Stopping & removing {container_name}..."),
+        (["git", "pull"],                               "Pulling latest code..."),
+        (["docker", "compose", "build", container_name], f"Rebuilding {container_name} image..."),
+        (["docker", "compose", "up", "-d", container_name], f"Starting {container_name}..."),
+    ]
+    for cmd, description in steps:
+        log_lines.append(f">>> {description}")
+        try:
+            r = subprocess.run(cmd, cwd=DEPLOY_DIR, capture_output=True, text=True)
+            if r.stdout.strip():
+                log_lines.append(r.stdout.strip())
+            if r.returncode != 0:
+                error = r.stderr.strip() or r.stdout.strip() or "Unknown error"
+                log_lines.append(f"ERROR: {error}")
+                return ActionResponse(status="error", output="\n".join(log_lines))
+        except Exception as e:
+            log_lines.append(f"ERROR: {e}")
+            return ActionResponse(status="error", output="\n".join(log_lines))
+
+    log_lines.append(f"✓ Redeployment of {container_name} complete!")
+    return ActionResponse(status="success", output="\n".join(log_lines))
+
+
+@app.get("/api/containers/{container_name}/logs")
+def stream_container_logs(container_name: str, current_user: str = Depends(get_current_user)):
+    validate_container_name(container_name)
+
+    def generate():
+        try:
+            proc = subprocess.Popen(
+                ["docker", "compose", "logs", "--tail=100", "--follow", container_name],
+                cwd=DEPLOY_DIR,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+            )
+            for line in proc.stdout:
+                yield f"data: {line.rstrip()}\n\n"
+            proc.wait()
+        except Exception as e:
+            yield f"data: ERROR: {e}\n\n"
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
+
+
+# ---------------------------------------------------------------------------
+# Groups CRUD
+# ---------------------------------------------------------------------------
+
+@app.get("/api/groups", response_model=List[Group])
+def get_groups(current_user: str = Depends(get_current_user)):
+    return load_groups()
+
+
+@app.post("/api/groups", response_model=Group)
+def create_group(body: GroupCreate, current_user: str = Depends(get_current_user)):
+    groups = load_groups()
+    new_group = {"id": str(uuid.uuid4()), "name": body.name, "containers": body.containers}
+    groups.append(new_group)
+    save_groups(groups)
+    return new_group
+
+
+@app.put("/api/groups/{group_id}", response_model=Group)
+def update_group(group_id: str, body: GroupUpdate, current_user: str = Depends(get_current_user)):
+    groups = load_groups()
+    for g in groups:
+        if g["id"] == group_id:
+            if body.name is not None:
+                g["name"] = body.name
+            if body.containers is not None:
+                g["containers"] = body.containers
+            save_groups(groups)
+            return g
+    raise HTTPException(status_code=404, detail="Group not found.")
+
+
+@app.delete("/api/groups/{group_id}")
+def delete_group(group_id: str, current_user: str = Depends(get_current_user)):
+    groups = load_groups()
+    new_groups = [g for g in groups if g["id"] != group_id]
+    if len(new_groups) == len(groups):
+        raise HTTPException(status_code=404, detail="Group not found.")
+    save_groups(new_groups)
+    return {"status": "deleted", "id": group_id}
