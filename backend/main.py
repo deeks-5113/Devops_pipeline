@@ -32,8 +32,8 @@ app = FastAPI(title="Deployment Dashboard API")
 # Setup CORS for the React frontend, allowing localhost
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:8710", "http://127.0.0.1:8720", "*"], # Added wildcard for remote IP testing
-    allow_credentials=True,
+    allow_origins=["*"], # Wildcard allows ANY server IP now
+    allow_credentials=False, # Must be False for wildcard (*) to work in CORS
     allow_methods=["*"],
     allow_headers=["*"],
 )
