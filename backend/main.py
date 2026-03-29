@@ -232,12 +232,29 @@ def stop_container(container_name: str, current_user: str = Depends(get_current_
         raise HTTPException(status_code=403, detail="This container is protected and cannot be stopped via the dashboard.")
     try:
         r = subprocess.run(
-            ["docker", "compose", "stop", container_name],
-            cwd=DEPLOY_DIR, capture_output=True, text=True,
+            ["docker", "stop", container_name],
+            capture_output=True, text=True,
         )
         if r.returncode != 0:
             return ActionResponse(status="error", output=r.stderr or r.stdout)
-        return ActionResponse(status="success", output=r.stdout or f"{container_name} stopped.")
+        return ActionResponse(status="success", output=r.stdout.strip() or f"{container_name} stopped.")
+    except Exception as e:
+        return ActionResponse(status="error", output=str(e))
+
+
+@app.post("/api/containers/{container_name}/start", response_model=ActionResponse)
+def start_container(container_name: str, current_user: str = Depends(get_current_user)):
+    validate_container_name(container_name)
+    if container_name in PROTECTED_CONTAINERS:
+        raise HTTPException(status_code=403, detail="This container is protected.")
+    try:
+        r = subprocess.run(
+            ["docker", "start", container_name],
+            capture_output=True, text=True,
+        )
+        if r.returncode != 0:
+            return ActionResponse(status="error", output=r.stderr or r.stdout)
+        return ActionResponse(status="success", output=r.stdout.strip() or f"{container_name} started.")
     except Exception as e:
         return ActionResponse(status="error", output=str(e))
 
@@ -249,12 +266,12 @@ def restart_container(container_name: str, current_user: str = Depends(get_curre
         raise HTTPException(status_code=403, detail="This container is protected and cannot be restarted via the dashboard.")
     try:
         r = subprocess.run(
-            ["docker", "compose", "restart", container_name],
-            cwd=DEPLOY_DIR, capture_output=True, text=True,
+            ["docker", "restart", container_name],
+            capture_output=True, text=True,
         )
         if r.returncode != 0:
             return ActionResponse(status="error", output=r.stderr or r.stdout)
-        return ActionResponse(status="success", output=r.stdout or f"{container_name} restarted.")
+        return ActionResponse(status="success", output=r.stdout.strip() or f"{container_name} restarted.")
     except Exception as e:
         return ActionResponse(status="error", output=str(e))
 
@@ -267,10 +284,11 @@ def redeploy_container(container_name: str, current_user: str = Depends(get_curr
 
     log_lines: List[str] = []
     steps = [
-        (["docker", "compose", "down", container_name], f"Stopping & removing {container_name}..."),
-        (["git", "pull"],                               "Pulling latest code..."),
-        (["docker", "compose", "build", container_name], f"Rebuilding {container_name} image..."),
-        (["docker", "compose", "up", "-d", container_name], f"Starting {container_name}..."),
+        (["docker", "stop", container_name],                                    f"Stopping {container_name}..."),
+        (["docker", "rm",   container_name],                                    f"Removing {container_name} container..."),
+        (["git", "pull"],                                                       "Pulling latest code..."),
+        (["docker-compose", "build", container_name],                           f"Rebuilding {container_name} image..."),
+        (["docker-compose", "up", "-d", "--no-deps", container_name],           f"Starting {container_name}..."),
     ]
     for cmd, description in steps:
         log_lines.append(f">>> {description}")
@@ -278,6 +296,8 @@ def redeploy_container(container_name: str, current_user: str = Depends(get_curr
             r = subprocess.run(cmd, cwd=DEPLOY_DIR, capture_output=True, text=True)
             if r.stdout.strip():
                 log_lines.append(r.stdout.strip())
+            if r.stderr.strip():
+                log_lines.append(r.stderr.strip())
             if r.returncode != 0:
                 error = r.stderr.strip() or r.stdout.strip() or "Unknown error"
                 log_lines.append(f"ERROR: {error}")
@@ -297,8 +317,7 @@ def stream_container_logs(container_name: str, current_user: str = Depends(get_c
     def generate():
         try:
             proc = subprocess.Popen(
-                ["docker", "compose", "logs", "--tail=100", "--follow", container_name],
-                cwd=DEPLOY_DIR,
+                ["docker", "logs", "--tail=100", "-f", container_name],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
@@ -309,7 +328,14 @@ def stream_container_logs(container_name: str, current_user: str = Depends(get_c
         except Exception as e:
             yield f"data: ERROR: {e}\n\n"
 
-    return StreamingResponse(generate(), media_type="text/event-stream")
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",   # disables nginx buffering so lines arrive in real-time
+        },
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Square, RotateCw, GitPullRequest, Terminal, X, AlertTriangle } from 'lucide-react';
+import { Square, Play, RotateCw, GitPullRequest, Terminal, X, AlertTriangle } from 'lucide-react';
 import axios from '../lib/axios';
 import toast from 'react-hot-toast';
 import LogViewerModal from './LogViewerModal';
@@ -11,10 +11,20 @@ const ACTION_CONFIG = {
     Icon: Square,
     btnClass: 'text-rose-400 border-rose-500/30 hover:bg-rose-500/10 hover:border-rose-500/60',
     confirmTitle: 'Stop Container',
-    confirmBody: (name) => `This will stop ${name}. The service will be unavailable until restarted.`,
+    confirmBody: (name) => `This will stop ${name}. The service will be unavailable until started again.`,
     iconBg: 'bg-rose-500/10',
     iconColor: 'text-rose-400',
     confirmBtn: 'bg-rose-600 hover:bg-rose-500',
+  },
+  start: {
+    label: 'Start',
+    Icon: Play,
+    btnClass: 'text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/10 hover:border-emerald-500/60',
+    confirmTitle: 'Start Container',
+    confirmBody: (name) => `This will start ${name}.`,
+    iconBg: 'bg-emerald-500/10',
+    iconColor: 'text-emerald-400',
+    confirmBtn: 'bg-emerald-600 hover:bg-emerald-500',
   },
   restart: {
     label: 'Restart',
@@ -156,7 +166,8 @@ const ContainerCard = ({ container, isProtected = false }) => {
         {!isProtected && (
           <div className="px-5 pb-5 border-t border-[var(--color-dark-border)] pt-4 space-y-2">
             <div className="grid grid-cols-3 gap-2">
-              {(['stop', 'restart', 'redeploy']).map((actionId) => {
+              {/* Stop (when running) or Start (when stopped) + Restart + Pull&Deploy */}
+              {([container.isHealthy ? 'stop' : 'start', 'restart', 'redeploy']).map((actionId) => {
                 const { label, Icon, btnClass } = ACTION_CONFIG[actionId];
                 return (
                   <button
