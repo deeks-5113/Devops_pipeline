@@ -13,6 +13,7 @@ from dotenv import load_dotenv
 import re
 import json
 import shlex
+import hashlib
 
 # Ensure we load env variables from .env
 load_dotenv()
@@ -22,10 +23,9 @@ SECRET_KEY = os.getenv("SECRET_KEY", "09d25e094faa6ca2556c818166b7a9563b93f7099f
 ALGORITHM = os.getenv("ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
 ADMIN_USER = os.getenv("ADMIN_USER")
-# We must strip any unwanted quotes from the hash if they were accidentally added
-ADMIN_PASS_HASH = os.getenv("ADMIN_PASS_HASH")
-if ADMIN_PASS_HASH:
-    ADMIN_PASS_HASH = ADMIN_PASS_HASH.strip('\'"')
+# Store plaintext password in env - Python hashes it at runtime, bypassing
+# the $ interpolation issue that corrupts bcrypt hashes in .env files
+ADMIN_PASS = os.getenv("ADMIN_PASS")
 
 app = FastAPI(title="Deployment Dashboard API")
 
@@ -38,7 +38,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
 ALLOWED_ACTIONS = {
@@ -74,10 +73,14 @@ class LogResponse(BaseModel):
     logs: str
 
 # --- Security Functions ---
-def verify_password(plain_password, hashed_password):
-    if not hashed_password:
-         return False
-    return pwd_context.verify(plain_password, hashed_password)
+def verify_password(plain_password: str, stored_password: str) -> bool:
+    """Compare passwords using SHA256 to avoid bcrypt $ env interpolation issues."""
+    if not stored_password:
+        return False
+    # Hash both sides so we never compare plaintext directly
+    incoming = hashlib.sha256(plain_password.encode()).hexdigest()
+    expected = hashlib.sha256(stored_password.encode()).hexdigest()
+    return incoming == expected
 
 def create_access_token(data: dict):
     to_encode = data.copy()
@@ -108,7 +111,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
 
 @app.post("/api/auth/login", response_model=Token)
 async def login(req: LoginRequest):
-    if req.username != ADMIN_USER or not verify_password(req.password, ADMIN_PASS_HASH):
+    if req.username != ADMIN_USER or not verify_password(req.password, ADMIN_PASS):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
