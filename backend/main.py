@@ -34,6 +34,14 @@ GROUPS_FILE = Path(DEPLOY_DIR) / "groups.json"
 
 app = FastAPI(title="Deployment Dashboard API")
 
+# Run once at startup — marks the bind-mounted host repo as safe for git.
+# Without this, git refuses to operate because /host-repo is owned by the
+# host OS user but the container process runs as root (different UID).
+subprocess.run(
+    ["git", "config", "--global", "--add", "safe.directory", DEPLOY_DIR],
+    capture_output=True, text=True
+)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -284,11 +292,14 @@ def redeploy_container(container_name: str, current_user: str = Depends(get_curr
 
     log_lines: List[str] = []
     steps = [
-        (["docker", "stop", container_name],                                    f"Stopping {container_name}..."),
-        (["docker", "rm",   container_name],                                    f"Removing {container_name} container..."),
-        (["git", "pull"],                                                       "Pulling latest code..."),
-        (["docker-compose", "build", container_name],                           f"Rebuilding {container_name} image..."),
-        (["docker-compose", "up", "-d", "--no-deps", container_name],           f"Starting {container_name}..."),
+        # Ensure git trusts /host-repo (may differ from startup if config was reset)
+        (["git", "config", "--global", "--add", "safe.directory", DEPLOY_DIR],
+                                                                   "Configuring git safe directory..."),
+        (["docker", "stop", container_name],                       f"Stopping {container_name}..."),
+        (["docker", "rm",   container_name],                       f"Removing {container_name} container..."),
+        (["git", "pull"],                                          "Pulling latest code..."),
+        (["docker-compose", "build", container_name],              f"Rebuilding {container_name} image..."),
+        (["docker-compose", "up", "-d", "--no-deps", container_name], f"Starting {container_name}..."),
     ]
     for cmd, description in steps:
         log_lines.append(f">>> {description}")

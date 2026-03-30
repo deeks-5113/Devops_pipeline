@@ -1,11 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
-import { Terminal, X } from 'lucide-react';
+import { Terminal, X, Maximize2, Minimize2, Download, ArrowDownCircle } from 'lucide-react';
+import Ansi from 'ansi-to-react';
 
 const LogViewerModal = ({ containerName, onClose }) => {
   const [lines, setLines]             = useState([]);
   const [isConnecting, setIsConnecting] = useState(true);
   const [error, setError]             = useState(null);
+  
+  const [isFullScreen, setIsFullScreen] = useState(false);
+  const [autoScroll, setAutoScroll]     = useState(true);
+
   const logsEndRef = useRef(null);
+  const scrollContainerRef = useRef(null);
   const readerRef  = useRef(null);
 
   useEffect(() => {
@@ -35,7 +41,6 @@ const LogViewerModal = ({ containerName, onClose }) => {
           if (done || !isMounted) break;
 
           const chunk = decoder.decode(value, { stream: true });
-          // Parse SSE lines: "data: <content>\n\n"
           const newLines = chunk
             .split('\n')
             .filter(l => l.startsWith('data: '))
@@ -61,39 +66,100 @@ const LogViewerModal = ({ containerName, onClose }) => {
     };
   }, [containerName]);
 
-  // Auto-scroll on new lines
+  // Handle auto-scroll
   useEffect(() => {
-    logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [lines]);
+    if (autoScroll && logsEndRef.current) {
+      logsEndRef.current.scrollIntoView({ behavior: 'auto' });
+    }
+  }, [lines, autoScroll]);
+
+  // Handle user scrolling up to pause auto-scroll
+  const handleScroll = () => {
+    if (!scrollContainerRef.current) return;
+    const { scrollTop, scrollHeight, clientHeight } = scrollContainerRef.current;
+    const isAtBottom = scrollHeight - scrollTop - clientHeight < 50;
+    if (!isAtBottom && autoScroll) {
+      setAutoScroll(false);
+    } else if (isAtBottom && !autoScroll) {
+      setAutoScroll(true);
+    }
+  };
+
+  const handleDownload = () => {
+    const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${containerName}-logs-${new Date().toISOString().replace(/[:.]/g, '-')}.log`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 md:p-8">
-      <div className="bg-[var(--color-terminal-bg)] border border-[var(--color-dark-border)] rounded-xl w-full max-w-4xl h-[72vh] flex flex-col shadow-2xl overflow-hidden">
-
+    <div className={`fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 transition-all ${isFullScreen ? 'md:p-0' : 'md:p-8'}`}>
+      <div 
+        className={`bg-[#0d1117] border border-slate-700/50 flex flex-col shadow-2xl overflow-hidden transition-all duration-300 ${
+          isFullScreen ? 'w-screen h-screen rounded-none' : 'w-full max-w-5xl h-[80vh] rounded-xl ring-1 ring-white/10'
+        }`}
+      >
         {/* Titlebar */}
-        <div className="bg-[var(--color-dark-surface)] border-b border-[var(--color-dark-border)] px-5 py-3 flex justify-between items-center shrink-0">
+        <div className="bg-[#161b22] border-b border-slate-700/50 px-4 py-2 flex justify-between items-center shrink-0 shadow-sm z-10">
           <div className="flex items-center space-x-3">
             <Terminal className="w-4 h-4 text-emerald-500" />
-            <span className="text-sm font-mono text-slate-300">
-              {isConnecting ? 'Connecting…' : `logs: ${containerName}`}
+            <span className="text-sm font-mono text-slate-300 font-semibold tracking-wide">
+              {isConnecting ? 'Connecting…' : containerName}
             </span>
             {!isConnecting && !error && (
-              <span className="flex items-center space-x-1.5">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                <span className="text-xs font-mono text-emerald-400 uppercase tracking-wide">live</span>
+              <span className="flex items-center space-x-1.5 ml-2">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.8)]" />
+                <span className="text-[10px] font-mono text-emerald-400 uppercase tracking-widest bg-emerald-500/10 px-1.5 py-0.5 rounded">live</span>
               </span>
             )}
           </div>
-          <button
-            onClick={onClose}
-            className="text-[var(--color-dark-muted)] hover:text-white transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={() => setAutoScroll(!autoScroll)}
+              title={autoScroll ? "Disable Auto-scroll" : "Enable Auto-scroll"}
+              className={`flex items-center space-x-1.5 px-2.5 py-1.5 rounded-md text-xs font-mono transition-colors ${
+                autoScroll ? 'bg-emerald-500/10 text-emerald-400 ring-1 ring-emerald-500/30' : 'bg-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-700'
+              }`}
+            >
+              <ArrowDownCircle className="w-3.5 h-3.5" />
+              <span>Follow</span>
+            </button>
+            <div className="w-px h-4 bg-slate-700 mx-1" />
+            <button
+              onClick={handleDownload}
+              title="Download Log"
+              className="p-1.5 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+            >
+              <Download className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setIsFullScreen(!isFullScreen)}
+              title="Toggle Fullscreen"
+              className="p-1.5 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+            >
+              {isFullScreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+            </button>
+            <button
+              onClick={onClose}
+              className="p-1.5 rounded-md text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 transition-colors ml-2"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Log body */}
-        <div className="flex-1 p-4 overflow-y-auto font-mono text-sm text-[var(--color-terminal-text)] whitespace-pre-wrap">
+        <div 
+          ref={scrollContainerRef}
+          onScroll={handleScroll}
+          className="flex-1 p-4 overflow-y-auto font-mono text-[13px] bg-[#0d1117] text-slate-300 whitespace-pre-wrap leading-relaxed"
+        >
           {isConnecting && (
             <div className="flex items-center space-x-2 animate-pulse text-emerald-500/70">
               <div className="w-2 h-4 bg-emerald-500/70" />
@@ -102,14 +168,19 @@ const LogViewerModal = ({ containerName, onClose }) => {
           )}
 
           {error && (
-            <div className="text-rose-400">Connection error: {error}</div>
+            <div className="text-rose-400 bg-rose-500/10 p-3 rounded-lg border border-rose-500/20 mt-2">
+              Connection error: {error}
+            </div>
           )}
 
-          {lines.map((line, i) => (
-            <div key={i} className="leading-relaxed">{line || '\u00A0'}</div>
-          ))}
-
-          <div ref={logsEndRef} />
+          <div className="min-h-full">
+            {lines.map((line, i) => (
+              <div key={i} className="hover:bg-white/5 px-1 -mx-1 rounded-sm">
+                <Ansi>{line || '\u00A0'}</Ansi>
+              </div>
+            ))}
+            <div ref={logsEndRef} className="h-4" />
+          </div>
         </div>
       </div>
     </div>

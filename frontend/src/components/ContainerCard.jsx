@@ -1,89 +1,58 @@
 import { useState } from 'react';
-import { Square, Play, RotateCw, GitPullRequest, Terminal, X, AlertTriangle } from 'lucide-react';
+import { Square, Play, RotateCw, GitPullRequest, Terminal, AlertTriangle } from 'lucide-react';
+import * as ContextMenu from '@radix-ui/react-context-menu';
+import { motion } from 'framer-motion';
 import axios from '../lib/axios';
 import toast from 'react-hot-toast';
 import LogViewerModal from './LogViewerModal';
+import Sparkline from './Sparkline';
+import { useMetricsHistory } from '../hooks/useMetricsHistory';
 
-// Fully-resolved Tailwind classes (no dynamic template literals — required for JIT)
 const ACTION_CONFIG = {
-  stop: {
-    label: 'Stop',
-    Icon: Square,
-    btnClass: 'text-rose-400 border-rose-500/30 hover:bg-rose-500/10 hover:border-rose-500/60',
-    confirmTitle: 'Stop Container',
-    confirmBody: (name) => `This will stop ${name}. The service will be unavailable until started again.`,
-    iconBg: 'bg-rose-500/10',
-    iconColor: 'text-rose-400',
-    confirmBtn: 'bg-rose-600 hover:bg-rose-500',
-  },
-  start: {
-    label: 'Start',
-    Icon: Play,
-    btnClass: 'text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/10 hover:border-emerald-500/60',
-    confirmTitle: 'Start Container',
-    confirmBody: (name) => `This will start ${name}.`,
-    iconBg: 'bg-emerald-500/10',
-    iconColor: 'text-emerald-400',
-    confirmBtn: 'bg-emerald-600 hover:bg-emerald-500',
-  },
-  restart: {
-    label: 'Restart',
-    Icon: RotateCw,
-    btnClass: 'text-amber-400 border-amber-500/30 hover:bg-amber-500/10 hover:border-amber-500/60',
-    confirmTitle: 'Restart Container',
-    confirmBody: (name) => `This will restart ${name}. There will be a brief interruption.`,
-    iconBg: 'bg-amber-500/10',
-    iconColor: 'text-amber-400',
-    confirmBtn: 'bg-amber-600 hover:bg-amber-500',
-  },
-  redeploy: {
-    label: 'Pull & Deploy',
-    Icon: GitPullRequest,
-    btnClass: 'text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/10 hover:border-emerald-500/60',
-    confirmTitle: 'Pull & Redeploy',
-    confirmBody: (name) => `This will pull the latest code, rebuild and restart ${name}. Service will be briefly unavailable.`,
-    iconBg: 'bg-emerald-500/10',
-    iconColor: 'text-emerald-400',
-    confirmBtn: 'bg-emerald-600 hover:bg-emerald-500',
-  },
+  stop: { label: 'Stop', Icon: Square, iconColor: 'text-rose-400', requireConfirmString: true, title: 'Stop Container' },
+  start: { label: 'Start', Icon: Play, iconColor: 'text-emerald-400', requireConfirmString: false, title: 'Start Container' },
+  restart: { label: 'Restart', Icon: RotateCw, iconColor: 'text-amber-400', requireConfirmString: false, title: 'Restart Container' },
+  redeploy: { label: 'Pull & Deploy', Icon: GitPullRequest, iconColor: 'text-emerald-400', requireConfirmString: true, title: 'Pull & Redeploy' },
 };
-
-const Spinner = () => (
-  <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-  </svg>
-);
 
 const ConfirmModal = ({ actionId, containerName, onConfirm, onCancel, isExecuting }) => {
   const cfg = ACTION_CONFIG[actionId];
+  const [confirmInput, setConfirmInput] = useState('');
+  const needsString = cfg.requireConfirmString;
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-      <div className="bg-[var(--color-dark-surface)] border border-[var(--color-dark-border)] rounded-xl w-full max-w-sm shadow-2xl p-6">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+      <div className="bg-[var(--color-dark-surface)] border border-[var(--color-dark-border)] ring-1 ring-white/5 rounded-xl w-full max-w-sm shadow-2xl p-6">
         <div className="flex justify-between items-start mb-4">
-          <div className={`p-2 rounded-full ${cfg.iconBg}`}>
-            <AlertTriangle className={`w-6 h-6 ${cfg.iconColor}`} />
-          </div>
-          <button onClick={onCancel} disabled={isExecuting} className="text-[var(--color-dark-muted)] hover:text-white transition-colors disabled:opacity-40">
-            <X className="w-5 h-5" />
-          </button>
+          <div className="p-2 rounded-full bg-slate-800"><AlertTriangle className={`w-6 h-6 ${cfg.iconColor}`} /></div>
         </div>
-        <h3 className="text-lg font-semibold text-white mb-2">{cfg.confirmTitle}</h3>
-        <p className="text-sm text-[var(--color-dark-muted)] mb-6">{cfg.confirmBody(containerName)}</p>
-        <div className="flex space-x-3">
-          <button
-            onClick={onCancel}
-            disabled={isExecuting}
-            className="flex-1 px-4 py-2 border border-[var(--color-dark-border)] rounded-lg text-sm font-medium text-slate-300 hover:bg-[var(--color-dark-bg)] transition-colors disabled:opacity-50"
-          >
-            Cancel
-          </button>
+        <h3 className="text-lg font-semibold text-white mb-2">{cfg.title}</h3>
+        <p className="text-sm text-[var(--color-dark-muted)] mb-4">
+          This action will affect <strong>{containerName}</strong>. 
+          {actionId === 'redeploy' && ' Code will be pulled, image rebuilt, and container restarted.'}
+        </p>
+
+        {needsString && (
+          <div className="mb-6">
+            <label className="block text-xs text-slate-400 mb-2 uppercase tracking-wide">Type <span className="text-slate-200 font-mono font-bold select-all">{containerName}</span> to confirm</label>
+            <input 
+              autoFocus
+              className="w-full bg-[var(--color-dark-bg)] border border-[var(--color-dark-border)] hover:border-slate-500 focus:border-emerald-500 rounded-md px-3 py-2 text-sm text-slate-200 outline-none font-mono transition-colors"
+              value={confirmInput}
+              onChange={(e) => setConfirmInput(e.target.value)}
+              placeholder="..."
+            />
+          </div>
+        )}
+
+        <div className="flex space-x-3 mt-6">
+          <button onClick={onCancel} disabled={isExecuting} className="flex-1 px-4 py-2 border border-slate-700 rounded-lg text-sm font-medium text-slate-300 hover:bg-slate-800 transition-colors">Cancel</button>
           <button
             onClick={onConfirm}
-            disabled={isExecuting}
-            className={`flex-1 px-4 py-2 text-white rounded-lg text-sm font-medium transition-colors flex items-center justify-center disabled:opacity-50 ${cfg.confirmBtn}`}
+            disabled={isExecuting || (needsString && confirmInput !== containerName)}
+            className="flex-1 px-4 py-2 bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/30 hover:text-emerald-300 rounded-lg text-sm font-medium transition-colors disabled:opacity-30 flex items-center justify-center"
           >
-            {isExecuting ? <Spinner /> : 'Confirm'}
+            {isExecuting ? 'Executing...' : 'Confirm'}
           </button>
         </div>
       </div>
@@ -92,107 +61,116 @@ const ConfirmModal = ({ actionId, containerName, onConfirm, onCancel, isExecutin
 };
 
 const ContainerCard = ({ container, isProtected = false }) => {
+  const { history } = useMetricsHistory();
   const [pendingAction, setPendingAction] = useState(null);
-  const [isExecuting, setIsExecuting]   = useState(false);
-  const [showLogs, setShowLogs]         = useState(false);
+  const [isExecuting, setIsExecuting] = useState(false);
+  const [showLogs, setShowLogs] = useState(false);
 
   const isHealthy = container.status?.toLowerCase().includes('up');
+  const sparkData = history[container.name] || [];
 
   const executeAction = async (actionId) => {
     setIsExecuting(true);
+    let toastId = null;
+    
+    // Smart Toasts with Progress
+    if (actionId === 'redeploy') { toastId = toast.loading(`${container.name}: Stopping & Pulling...`); } 
+    else { toastId = toast.loading(`${container.name}: ${ACTION_CONFIG[actionId].label}...`); }
+
     try {
       const { data } = await axios.post(`/api/containers/${container.name}/${actionId}`);
       if (data.status === 'success') {
-        toast.success(`${container.name}: ${ACTION_CONFIG[actionId].label} successful`);
+        toast.success(`${container.name}: Success`, { id: toastId });
       } else {
-        toast.error(`${container.name}: ${data.output || 'Action failed'}`);
+        toast.error(`${container.name}: ${data.output || 'Action failed'}`, { id: toastId });
       }
     } catch (err) {
       const detail = err.response?.data?.detail || 'Request failed';
-      toast.error(`${container.name}: ${detail}`);
+      toast.error(`${container.name}: ${detail}`, { id: toastId });
     } finally {
       setIsExecuting(false);
       setPendingAction(null);
     }
   };
 
-  return (
-    <>
-      <div className={`
+  const cardInner = (
+    <motion.div
+      layout
+      initial={{ opacity: 0, scale: 0.95 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.95 }}
+      className={`
         relative flex flex-col bg-[var(--color-dark-surface)] rounded-xl border border-[var(--color-dark-border)]
-        overflow-hidden transition-all duration-200 hover:border-slate-600 hover:shadow-lg
-        ${isHealthy ? 'border-l-4 border-l-emerald-500' : 'border-l-4 border-l-rose-500'}
-      `}>
-
-        {/* ── Header ── */}
-        <div className="px-5 pt-5 pb-3 flex items-start justify-between">
+        ring-1 ring-white/5 overflow-hidden transition-shadow duration-200 hover:shadow-xl hover:border-slate-600
+        ${isHealthy ? 'led-glow-emerald border-t border-emerald-500/20' : 'led-glow-rose border-t border-rose-500/20'}
+      `}
+    >
+      <div className="px-5 pt-5 pb-3 flex flex-col justify-between h-full group">
+        <div className="flex items-start justify-between min-w-0">
           <div className="min-w-0">
-            <div className="flex items-center space-x-2 mb-0.5">
-              <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                isHealthy
-                  ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]'
-                  : 'bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.8)]'
-              }`} />
-              <h3 className="font-semibold text-slate-100 text-sm truncate">{container.name}</h3>
+            <div className="flex items-center space-x-2 mb-1">
+              <div className={`w-2 h-2 rounded-full flex-shrink-0 ${isHealthy ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,1)]' : 'bg-rose-500 shadow-[0_0_10px_rgba(244,63,94,1)]'}`} />
+              <h3 className="font-semibold text-slate-100 text-[15px] truncate">{container.name}</h3>
             </div>
             <p className="text-xs text-[var(--color-dark-muted)] pl-4 truncate">{container.status}</p>
           </div>
           {isProtected && (
-            <span className="ml-2 flex-shrink-0 text-[10px] font-medium bg-slate-700/60 text-slate-400 px-2 py-0.5 rounded-full border border-slate-600/40 uppercase tracking-wide">
-              system
-            </span>
+             <span className="ml-2 flex-shrink-0 text-[10px] font-mono text-emerald-500/80 px-2 py-0.5 rounded-full border border-emerald-500/20 uppercase tracking-widest bg-emerald-500/5">SYS</span>
           )}
         </div>
 
-        {/* ── Stats Grid ── */}
-        <div className="px-5 pb-4 grid grid-cols-2 gap-2 flex-1">
-          <div className="bg-[var(--color-dark-bg)] rounded-lg p-3">
-            <p className="text-[10px] font-medium text-[var(--color-dark-muted)] uppercase tracking-wide mb-1">CPU</p>
-            <p className="text-sm font-mono font-semibold text-emerald-400">{container.cpu_perc || 'N/A'}</p>
-          </div>
-          <div className="bg-[var(--color-dark-bg)] rounded-lg p-3">
-            <p className="text-[10px] font-medium text-[var(--color-dark-muted)] uppercase tracking-wide mb-1">RAM</p>
-            <p className="text-sm font-mono font-semibold text-blue-400">{container.mem_usage || 'N/A'}</p>
-          </div>
-          {container.ports && (
-            <div className="col-span-2 bg-[var(--color-dark-bg)] rounded-lg p-3">
-              <p className="text-[10px] font-medium text-[var(--color-dark-muted)] uppercase tracking-wide mb-1">Ports</p>
-              <p className="text-xs font-mono text-slate-300 truncate">{container.ports}</p>
+        <div className="mt-4 flex gap-x-4">
+          <div className="flex-1 bg-[var(--color-dark-bg)] rounded-lg p-2.5 border border-slate-800 flex flex-col">
+            <div className="flex items-center justify-between mb-1 text-[10px] uppercase font-bold text-slate-500 tracking-wider">
+               <span>CPU</span>
+               <span className="font-mono text-emerald-400">{container.cpu_perc || '0%'}</span>
             </div>
-          )}
+            <Sparkline data={sparkData.map(d => ({ cpu: d.cpu }))} color="#10b981" />
+          </div>
         </div>
 
-        {/* ── Action Buttons (hidden for protected containers) ── */}
-        {!isProtected && (
-          <div className="px-5 pb-5 border-t border-[var(--color-dark-border)] pt-4 space-y-2">
-            <div className="grid grid-cols-3 gap-2">
-              {/* Stop (when running) or Start (when stopped) + Restart + Pull&Deploy */}
-              {([container.isHealthy ? 'stop' : 'start', 'restart', 'redeploy']).map((actionId) => {
-                const { label, Icon, btnClass } = ACTION_CONFIG[actionId];
-                return (
-                  <button
-                    key={actionId}
-                    onClick={() => setPendingAction(actionId)}
-                    disabled={isExecuting}
-                    className={`flex flex-col items-center justify-center space-y-1 px-2 py-2.5 rounded-lg border text-xs font-medium transition-all ${btnClass} disabled:opacity-40 disabled:cursor-not-allowed`}
-                  >
-                    <Icon className="w-3.5 h-3.5" />
-                    <span>{label}</span>
-                  </button>
-                );
-              })}
-            </div>
-            <button
-              onClick={() => setShowLogs(true)}
-              disabled={isExecuting}
-              className="w-full flex items-center justify-center space-x-2 px-3 py-2 rounded-lg border border-[var(--color-dark-border)] text-slate-400 hover:bg-slate-700/20 hover:text-slate-200 text-xs font-medium transition-all disabled:opacity-40"
-            >
-              <Terminal className="w-3.5 h-3.5" />
-              <span>View Live Logs</span>
-            </button>
-          </div>
-        )}
       </div>
+    </motion.div>
+  );
+
+  return (
+    <>
+      <ContextMenu.Root>
+        <ContextMenu.Trigger asChild>
+          {cardInner}
+        </ContextMenu.Trigger>
+        
+        {!isProtected && (
+        <ContextMenu.Portal>
+          <ContextMenu.Content 
+            className="min-w-[220px] bg-slate-900 border border-slate-700/50 rounded-xl shadow-2xl overflow-hidden p-1 z-50 animate-in fade-in zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out data-[state=closed]:zoom-out-95"
+          >
+             <ContextMenu.Label className="px-2 py-1.5 text-[10px] font-mono uppercase tracking-widest text-slate-500">Actions · {container.name}</ContextMenu.Label>
+
+             <ContextMenu.Item 
+                onSelect={() => setShowLogs(true)}
+                className="flex items-center space-x-2 px-2 py-2 text-sm text-slate-200 outline-none hover:bg-emerald-500/10 hover:text-emerald-400 rounded-md cursor-pointer transition-colors"
+             >
+                <Terminal className="w-4 h-4" /> <span>View Live Logs</span>
+             </ContextMenu.Item>
+             <ContextMenu.Separator className="h-px bg-slate-800 my-1" />
+
+             {([isHealthy ? 'stop' : 'start', 'restart', 'redeploy']).map((actionId) => {
+                const { label, Icon, iconColor } = ACTION_CONFIG[actionId];
+                return (
+                  <ContextMenu.Item 
+                    key={actionId}
+                    onSelect={() => setPendingAction(actionId)}
+                    className="flex items-center space-x-2 px-2 py-2 text-sm text-slate-200 outline-none hover:bg-slate-800 rounded-md cursor-pointer transition-colors"
+                  >
+                     <Icon className={`w-4 h-4 ${iconColor}`} /> <span>{label}</span>
+                  </ContextMenu.Item>
+                )
+             })}
+          </ContextMenu.Content>
+        </ContextMenu.Portal>
+        )}
+      </ContextMenu.Root>
 
       {pendingAction && (
         <ConfirmModal

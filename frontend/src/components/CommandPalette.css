@@ -1,0 +1,55 @@
+[cmdk-root] {
+  width: 100%;
+}
+
+[cmdk-input] {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  outline: none;
+  background: transparent;
+  color: var(--color-dark-text);
+  margin-left: 8px;
+}
+
+[cmdk-input]::placeholder {
+  color: var(--color-dark-muted);
+}
+
+[cmdk-list] {
+  min-height: 100px;
+}
+
+[cmdk-group-heading] {
+  user-select: none;
+  font-size: 10px;
+  color: var(--color-dark-muted);
+  padding: 0 8px;
+  margin-bottom: 8px;
+  margin-top: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 500;
+}
+
+[cmdk-item] {
+  content-visibility: auto;
+  cursor: pointer;
+  border-radius: 6px;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--color-dark-text);
+  padding: 10px 12px;
+  margin-bottom: 4px;
+}
+
+[cmdk-item][aria-selected="true"] {
+  background: rgba(148, 163, 184, 0.1);
+  color: var(--color-dark-text);
+}
+
+[cmdk-item][aria-disabled="true"] {
+  color: var(--color-dark-muted);
+  cursor: not-allowed;
+}

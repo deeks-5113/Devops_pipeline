@@ -4,12 +4,16 @@ import Dashboard from './pages/Dashboard'
 import FolderView from './pages/FolderView'
 import DashboardLayout from './layouts/DashboardLayout'
 import ProtectedRoute from './components/ProtectedRoute'
+import { MetricsProvider } from './hooks/useMetricsHistory'
+import CommandPalette from './components/CommandPalette'
 
 function App() {
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/login" element={<Login />} />
+    <MetricsProvider>
+      <BrowserRouter>
+        <CommandPalette />
+        <Routes>
+          <Route path="/login" element={<Login />} />
         
         <Route element={<ProtectedRoute />}>
           <Route element={<DashboardLayout />}>
@@ -20,7 +24,8 @@ function App() {
         
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
-    </BrowserRouter>
+      </BrowserRouter>
+    </MetricsProvider>
   )
 }
 
