@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { Square, Play, RotateCw, GitPullRequest, Terminal, AlertTriangle } from 'lucide-react';
-import * as ContextMenu from '@radix-ui/react-context-menu';
 import { motion } from 'framer-motion';
 import axios from '../lib/axios';
 import toast from 'react-hot-toast';
@@ -129,48 +128,44 @@ const ContainerCard = ({ container, isProtected = false }) => {
           </div>
         </div>
 
+        {/* ── Action Toolbar ── */}
+        {!isProtected && (
+          <div className="mt-4 pt-3 border-t border-slate-700/50 flex space-x-2 shrink-0">
+            <button
+               onClick={() => setShowLogs(true)}
+               className="flex-1 flex items-center justify-center space-x-1.5 px-2 py-1.5 rounded bg-slate-800/50 hover:bg-emerald-500/10 hover:text-emerald-400 text-slate-400 transition-colors text-xs font-medium border border-transparent hover:border-emerald-500/20"
+               title="Live Logs"
+            >
+              <Terminal className="w-3.5 h-3.5" /> <span>Logs</span>
+            </button>
+            
+            <div className="w-px bg-slate-700/50 my-1"></div>
+
+            <div className="flex flex-1 space-x-1 justify-end">
+              {([isHealthy ? 'stop' : 'start', 'restart', 'redeploy']).map((actionId) => {
+                 const { Icon, iconColor, label } = ACTION_CONFIG[actionId];
+                 return (
+                   <button
+                      key={actionId}
+                      onClick={() => setPendingAction(actionId)}
+                      title={label}
+                      className={`flex-1 flex items-center justify-center px-2 py-1.5 rounded bg-slate-800/50 hover:bg-slate-700 transition-colors border border-transparent hover:border-slate-600/50 ${iconColor}`}
+                   >
+                     <Icon className="w-3.5 h-3.5" />
+                   </button>
+                 )
+              })}
+            </div>
+          </div>
+        )}
+
       </div>
     </motion.div>
   );
 
   return (
     <>
-      <ContextMenu.Root>
-        <ContextMenu.Trigger asChild>
-          {cardInner}
-        </ContextMenu.Trigger>
-        
-        {!isProtected && (
-        <ContextMenu.Portal>
-          <ContextMenu.Content 
-            className="min-w-[220px] bg-slate-900 border border-slate-700/50 rounded-xl shadow-2xl overflow-hidden p-1 z-50 animate-in fade-in zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out data-[state=closed]:zoom-out-95"
-          >
-             <ContextMenu.Label className="px-2 py-1.5 text-[10px] font-mono uppercase tracking-widest text-slate-500">Actions · {container.name}</ContextMenu.Label>
-
-             <ContextMenu.Item 
-                onSelect={() => setShowLogs(true)}
-                className="flex items-center space-x-2 px-2 py-2 text-sm text-slate-200 outline-none hover:bg-emerald-500/10 hover:text-emerald-400 rounded-md cursor-pointer transition-colors"
-             >
-                <Terminal className="w-4 h-4" /> <span>View Live Logs</span>
-             </ContextMenu.Item>
-             <ContextMenu.Separator className="h-px bg-slate-800 my-1" />
-
-             {([isHealthy ? 'stop' : 'start', 'restart', 'redeploy']).map((actionId) => {
-                const { label, Icon, iconColor } = ACTION_CONFIG[actionId];
-                return (
-                  <ContextMenu.Item 
-                    key={actionId}
-                    onSelect={() => setPendingAction(actionId)}
-                    className="flex items-center space-x-2 px-2 py-2 text-sm text-slate-200 outline-none hover:bg-slate-800 rounded-md cursor-pointer transition-colors"
-                  >
-                     <Icon className={`w-4 h-4 ${iconColor}`} /> <span>{label}</span>
-                  </ContextMenu.Item>
-                )
-             })}
-          </ContextMenu.Content>
-        </ContextMenu.Portal>
-        )}
-      </ContextMenu.Root>
+      {cardInner}
 
       {pendingAction && (
         <ConfirmModal
