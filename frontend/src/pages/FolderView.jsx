@@ -27,7 +27,7 @@ const FolderView = () => {
       setAllGroups(groups);
 
       if (isUngrouped) {
-        // We evaluate ungrouped locally against the latest context stats
+        setGroup({ id: 'ungrouped', name: 'Ungrouped' });
       } else {
         const found = groups.find(g => g.id === groupId);
         if (!found) { navigate('/'); return; }
@@ -44,24 +44,16 @@ const FolderView = () => {
     fetchGroups();
   }, [fetchGroups]);
 
-  // Recalculate local derived state
-  if (isUngrouped && allStats.length > 0 && !group) {
-    const assigned = new Set(allGroups.flatMap(g => g.containers));
-    setGroup({
-      id: 'ungrouped',
-      name: 'Ungrouped',
-      containers: allStats.filter(c => !assigned.has(c.name)).map(c => c.name),
-    });
-  }
-
-  // Containers that belong to this folder
-  const folderContainers = group
-    ? allStats.filter(c => group.containers.includes(c.name))
-    : [];
-
-  // Containers not assigned to any group (for the Add modal)
-  const assignedNames     = new Set(allGroups.flatMap(g => g.containers));
+  // Dynamically calculate containers not assigned to any group
+  const assignedNames = new Set(allGroups.flatMap(g => g.containers));
   const ungroupedAvailable = allStats.filter(c => !assignedNames.has(c.name));
+
+  // Dynamically resolve which containers to show on the screen
+  const folderContainers = isUngrouped 
+    ? ungroupedAvailable 
+    : group 
+      ? allStats.filter(c => group.containers.includes(c.name))
+      : [];
 
   if (isLoading) {
     return (
