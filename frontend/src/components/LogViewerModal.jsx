@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 import { Terminal, X, Maximize2, Minimize2, Download, ArrowDownCircle } from 'lucide-react';
-import Ansi from 'ansi-to-react';
 
 const LogViewerModal = ({ containerName, onClose }) => {
   const [lines, setLines]             = useState([]);
@@ -176,7 +175,7 @@ const LogViewerModal = ({ containerName, onClose }) => {
           <div className="min-h-full">
             {lines.map((line, i) => (
               <div key={i} className="hover:bg-white/5 px-1 -mx-1 rounded-sm">
-                <Ansi>{line || '\u00A0'}</Ansi>
+                {line || '\u00A0'}
               </div>
             ))}
             <div ref={logsEndRef} className="h-4" />

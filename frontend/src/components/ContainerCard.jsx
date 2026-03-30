@@ -33,12 +33,12 @@ const ConfirmModal = ({ actionId, containerName, onConfirm, onCancel, isExecutin
 
         {needsString && (
           <div className="mb-6">
-            <label className="block text-xs text-slate-400 mb-2 uppercase tracking-wide">Type <span className="text-slate-200 font-mono font-bold select-all">{containerName}</span> to confirm</label>
+            <label className="block text-xs text-slate-400 mb-2 uppercase tracking-wide">Type <span className="text-slate-200 font-mono font-bold select-all">{containerName.toUpperCase()}</span> to confirm</label>
             <input 
               autoFocus
-              className="w-full bg-[var(--color-dark-bg)] border border-[var(--color-dark-border)] hover:border-slate-500 focus:border-emerald-500 rounded-md px-3 py-2 text-sm text-slate-200 outline-none font-mono transition-colors"
+              className="w-full bg-[var(--color-dark-bg)] border border-[var(--color-dark-border)] hover:border-slate-500 focus:border-emerald-500 rounded-md px-3 py-2 text-sm text-slate-200 outline-none font-mono transition-colors uppercase"
               value={confirmInput}
-              onChange={(e) => setConfirmInput(e.target.value)}
+              onChange={(e) => setConfirmInput(e.target.value.toUpperCase())}
               placeholder="..."
             />
           </div>
@@ -48,7 +48,7 @@ const ConfirmModal = ({ actionId, containerName, onConfirm, onCancel, isExecutin
           <button onClick={onCancel} disabled={isExecuting} className="flex-1 px-4 py-2 border border-slate-700 rounded-lg text-sm font-medium text-slate-300 hover:bg-slate-800 transition-colors">Cancel</button>
           <button
             onClick={onConfirm}
-            disabled={isExecuting || (needsString && confirmInput !== containerName)}
+            disabled={isExecuting || (needsString && confirmInput !== containerName.toUpperCase())}
             className="flex-1 px-4 py-2 bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/30 hover:text-emerald-300 rounded-lg text-sm font-medium transition-colors disabled:opacity-30 flex items-center justify-center"
           >
             {isExecuting ? 'Executing...' : 'Confirm'}
