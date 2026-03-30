@@ -11,7 +11,7 @@ const ACTION_CONFIG = {
   stop: { label: 'Stop', Icon: Square, iconColor: 'text-rose-400', requireConfirmString: true, title: 'Stop Container' },
   start: { label: 'Start', Icon: Play, iconColor: 'text-emerald-400', requireConfirmString: false, title: 'Start Container' },
   restart: { label: 'Restart', Icon: RotateCw, iconColor: 'text-amber-400', requireConfirmString: false, title: 'Restart Container' },
-  redeploy: { label: 'Pull & Deploy', Icon: GitPullRequest, iconColor: 'text-emerald-400', requireConfirmString: true, title: 'Pull & Redeploy' },
+  redeploy: { label: 'Pull & Re-Deploy', Icon: GitPullRequest, iconColor: 'text-emerald-400', requireConfirmString: true, title: 'Pull & Redeploy' },
 };
 
 const ConfirmModal = ({ actionId, containerName, onConfirm, onCancel, isExecuting }) => {
@@ -110,6 +110,11 @@ const ContainerCard = ({ container, isProtected = false }) => {
             <div className="flex items-center space-x-2 mb-1">
               <div className={`w-2 h-2 rounded-full flex-shrink-0 ${isHealthy ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,1)]' : 'bg-rose-500 shadow-[0_0_10px_rgba(244,63,94,1)]'}`} />
               <h3 className="font-semibold text-slate-100 text-[15px] truncate">{container.name}</h3>
+              {container.ports && (
+                <span className="text-[10px] font-mono text-slate-400 bg-slate-800/60 px-1.5 py-0.5 rounded border border-slate-700/50 truncate max-w-[140px] hidden sm:block">
+                  {container.ports.split(',')[0]}
+                </span>
+              )}
             </div>
             <p className="text-xs text-[var(--color-dark-muted)] pl-4 truncate">{container.status}</p>
           </div>
@@ -130,32 +135,29 @@ const ContainerCard = ({ container, isProtected = false }) => {
 
         {/* ── Action Toolbar ── */}
         {!isProtected && (
-          <div className="mt-4 pt-3 border-t border-slate-700/50 flex space-x-2 shrink-0">
+          <div className="mt-4 pt-4 border-t border-slate-700/50 grid grid-cols-2 gap-2">
             <button
                onClick={() => setShowLogs(true)}
-               className="flex-1 flex items-center justify-center space-x-1.5 px-2 py-1.5 rounded bg-slate-800/50 hover:bg-emerald-500/10 hover:text-emerald-400 text-slate-400 transition-colors text-xs font-medium border border-transparent hover:border-emerald-500/20"
+               className="flex items-center justify-center space-x-2 px-3 py-2.5 rounded-lg bg-slate-800/40 hover:bg-emerald-500/10 hover:text-emerald-400 text-slate-400 transition-colors text-xs font-semibold border border-slate-700/50 hover:border-emerald-500/30"
                title="Live Logs"
             >
-              <Terminal className="w-3.5 h-3.5" /> <span>Logs</span>
+              <Terminal className="w-4 h-4" /> <span>Logs</span>
             </button>
             
-            <div className="w-px bg-slate-700/50 my-1"></div>
 
-            <div className="flex flex-1 space-x-1 justify-end">
-              {([isHealthy ? 'stop' : 'start', 'restart', 'redeploy']).map((actionId) => {
-                 const { Icon, iconColor, label } = ACTION_CONFIG[actionId];
-                 return (
-                   <button
-                      key={actionId}
-                      onClick={() => setPendingAction(actionId)}
-                      title={label}
-                      className={`flex-1 flex items-center justify-center px-2 py-1.5 rounded bg-slate-800/50 hover:bg-slate-700 transition-colors border border-transparent hover:border-slate-600/50 ${iconColor}`}
-                   >
-                     <Icon className="w-3.5 h-3.5" />
-                   </button>
-                 )
-              })}
-            </div>
+            {([isHealthy ? 'stop' : 'start', 'restart', 'redeploy']).map((actionId) => {
+               const { Icon, iconColor, label } = ACTION_CONFIG[actionId];
+               return (
+                 <button
+                    key={actionId}
+                    onClick={() => setPendingAction(actionId)}
+                    title={label}
+                    className={`flex items-center justify-center space-x-2 px-3 py-2.5 rounded-lg bg-slate-800/40 hover:bg-slate-700/60 transition-colors border border-slate-700/50 hover:border-slate-500 text-xs font-semibold text-slate-300 ${iconColor.replace('text-', 'hover:text-')}`}
+                 >
+                   <Icon className={`w-4 h-4 ${iconColor}`} /> <span>{label}</span>
+                 </button>
+               )
+            })}
           </div>
         )}
 
