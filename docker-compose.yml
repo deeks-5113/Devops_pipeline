@@ -27,8 +27,13 @@ services:
       # Mount the scripts folder natively
       - ./scripts:/opt/deployment-scripts
       
-      # Important: If your `redeploy.sh` needs to run `docker compose` or `git pull` 
-      # against a host directory, you might need to mount the host repo into the container too.
+      # Mount the entire home directory to allow management of any project in ~/
+      - /home/aditya:/host-home
+      
+      # Mount SSH keys for git pull authentication (assumes no passphrase)
+      - /home/aditya/.ssh:/root/.ssh:ro
+      
+      # Internal project mount (kept for backwards compatibility if needed)
       - .:/host-repo
     env_file:
       - ./backend/.env

@@ -73,7 +73,9 @@ const ContainerCard = ({ container, isProtected = false }) => {
     let toastId = null;
     
     // Smart Toasts with Progress
-    if (actionId === 'redeploy') { toastId = toast.loading(`${container.name}: Stopping & Pulling...`); } 
+    if (actionId === 'redeploy') { 
+        toastId = toast.loading(`${container.name}: 1/4 - Stopping (down)...`); 
+    } 
     else { toastId = toast.loading(`${container.name}: ${ACTION_CONFIG[actionId].label}...`); }
 
     try {
@@ -110,6 +112,11 @@ const ContainerCard = ({ container, isProtected = false }) => {
             <div className="flex items-center space-x-2 mb-1">
               <div className={`w-2 h-2 rounded-full flex-shrink-0 ${isHealthy ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,1)]' : 'bg-rose-500 shadow-[0_0_10px_rgba(244,63,94,1)]'}`} />
               <h3 className="font-semibold text-slate-100 text-[15px] truncate">{container.name}</h3>
+              {container.folder && container.folder !== "N/A" && (
+                <span className="text-[10px] font-mono text-emerald-400 bg-emerald-400/5 px-1.5 py-0.5 rounded border border-emerald-500/20 truncate lowercase">
+                  {container.folder}
+                </span>
+              )}
               {container.ports && (
                 <span className="text-[10px] font-mono text-slate-400 bg-slate-800/60 px-1.5 py-0.5 rounded border border-slate-700/50 truncate max-w-[140px] hidden sm:block">
                   {container.ports.split(',')[0]}

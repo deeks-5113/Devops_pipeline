@@ -30,6 +30,8 @@ PROTECTED_CONTAINERS = {"devops_dashboard_backend", "devops_dashboard_frontend"}
 
 # Path to host repo (bind-mounted in docker-compose.yml as .:/host-repo)
 DEPLOY_DIR = "/host-repo"
+HOST_HOME_PREFIX = "/home/aditya"
+CONTAINER_HOME_PREFIX = "/host-home"
 GROUPS_FILE = Path(DEPLOY_DIR) / "groups.json"
 
 app = FastAPI(title="Deployment Dashboard API")
@@ -76,6 +78,7 @@ class ContainerInfo(BaseModel):
     ports: str
     cpu_perc: str = "N/A"
     mem_usage: str = "N/A"
+    folder: str = "N/A"
 
 class ActionResponse(BaseModel):
     status: str
@@ -156,6 +159,29 @@ def validate_container_name(name: str):
     if not re.match(r"^[a-zA-Z0-9_-]+$", name):
         raise HTTPException(status_code=400, detail="Invalid container name format.")
 
+def get_container_context(container_name: str) -> str:
+    """Uses docker inspect to find the host-side working directory (project root)."""
+    try:
+        # Get labels from docker inspect
+        r = subprocess.run(
+            ["docker", "inspect", container_name, "--format", '{{ index .Config.Labels "com.docker.compose.project.working_dir" }}'],
+            capture_output=True, text=True, check=True
+        )
+        host_path = r.stdout.strip()
+        if not host_path:
+            # Fallback for projects not started with the working_dir label
+            return DEPLOY_DIR
+        
+        # Translate host path to container path
+        # Example: /home/aditya/Janmasethu/sakhi -> /host-home/Janmasethu/sakhi
+        if host_path.startswith(HOST_HOME_PREFIX):
+            container_path = host_path.replace(HOST_HOME_PREFIX, CONTAINER_HOME_PREFIX, 1)
+            return container_path
+        
+        return host_path # Fallback
+    except Exception:
+        return DEPLOY_DIR
+
 
 # ---------------------------------------------------------------------------
 # Auth
@@ -219,6 +245,7 @@ def get_containers(current_user: str = Depends(get_current_user)):
                     ports=d.get("Ports", ""),
                     cpu_perc=st.get("CPUPerc", "N/A"),
                     mem_usage=st.get("MemUsage", "N/A"),
+                    folder=get_container_context(name).split("/")[-1] or "N/A",
                 ))
             except json.JSONDecodeError:
                 continue
@@ -290,21 +317,24 @@ def redeploy_container(container_name: str, current_user: str = Depends(get_curr
     if container_name in PROTECTED_CONTAINERS:
         raise HTTPException(status_code=403, detail="This container is protected and cannot be redeployed via the dashboard.")
 
-    log_lines: List[str] = []
+    target_dir = get_container_context(container_name)
+    log_lines: List[str] = [f"Context: {target_dir}"]
+    
     steps = [
-        # Ensure git trusts /host-repo (may differ from startup if config was reset)
-        (["git", "config", "--global", "--add", "safe.directory", DEPLOY_DIR],
-                                                                   "Configuring git safe directory..."),
-        (["docker", "stop", container_name],                       f"Stopping {container_name}..."),
-        (["docker", "rm",   container_name],                       f"Removing {container_name} container..."),
+        # Ensure git trusts the directory
+        (["git", "config", "--global", "--add", "safe.directory", target_dir],
+                                                                    "Configuring git safe directory..."),
+        (["docker", "compose", "down"],                            f"Stopping and removing containers (down)..."),
         (["git", "pull"],                                          "Pulling latest code..."),
-        (["docker-compose", "build", container_name],              f"Rebuilding {container_name} image..."),
-        (["docker-compose", "up", "-d", "--no-deps", container_name], f"Starting {container_name}..."),
+        (["docker", "compose", "build", container_name],           f"Rebuilding {container_name} image..."),
+        (["docker", "compose", "up", "-d", "--no-deps", container_name], f"Starting {container_name} up..."),
     ]
+    
     for cmd, description in steps:
         log_lines.append(f">>> {description}")
         try:
-            r = subprocess.run(cmd, cwd=DEPLOY_DIR, capture_output=True, text=True)
+            # Note: We run in the target_dir discovered from labels
+            r = subprocess.run(cmd, cwd=target_dir, capture_output=True, text=True)
             if r.stdout.strip():
                 log_lines.append(r.stdout.strip())
             if r.stderr.strip():
@@ -319,6 +349,7 @@ def redeploy_container(container_name: str, current_user: str = Depends(get_curr
 
     log_lines.append(f"✓ Redeployment of {container_name} complete!")
     return ActionResponse(status="success", output="\n".join(log_lines))
+
 
 
 @app.get("/api/containers/{container_name}/logs")
