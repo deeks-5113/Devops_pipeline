@@ -108,25 +108,29 @@ const ContainerCard = ({ container, isProtected = false }) => {
     >
       <div className="px-5 pt-5 pb-3 flex flex-col justify-between h-full group">
         <div className="flex items-start justify-between min-w-0">
-          <div className="min-w-0">
-            <div className="flex items-center space-x-2 mb-1">
-              <div className={`w-2 h-2 rounded-full flex-shrink-0 ${isHealthy ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,1)]' : 'bg-rose-500 shadow-[0_0_10px_rgba(244,63,94,1)]'}`} />
-              <h3 className="font-semibold text-slate-100 text-[15px] truncate">{container.name}</h3>
-              {container.folder && container.folder !== "N/A" && (
-                <span className="text-[10px] font-mono text-emerald-400 bg-emerald-400/5 px-1.5 py-0.5 rounded border border-emerald-500/20 truncate lowercase">
-                  {container.folder}
-                </span>
-              )}
-              {container.ports && (
-                <span className="text-[10px] font-mono text-slate-400 bg-slate-800/60 px-1.5 py-0.5 rounded border border-slate-700/50 truncate max-w-[140px] hidden sm:block">
-                  {container.ports.split(',')[0]}
-                </span>
-              )}
+          <div className="min-w-0 w-full pr-2">
+            <div className="flex flex-col space-y-2 mb-2 w-full">
+              <div className="flex items-start space-x-2">
+                <div className={`w-2 h-2 rounded-full flex-shrink-0 mt-1.5 ${isHealthy ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,1)]' : 'bg-rose-500 shadow-[0_0_10px_rgba(244,63,94,1)]'}`} />
+                <h3 className="font-semibold text-slate-100 text-[15px] break-all leading-tight">{container.name}</h3>
+              </div>
+              <div className="flex flex-wrap gap-1.5 pl-4">
+                {container.folder && container.folder !== "N/A" && (
+                  <span className="text-[10px] font-mono text-emerald-400 bg-emerald-400/5 px-2 py-0.5 rounded border border-emerald-500/20 lowercase break-all">
+                    {container.folder}
+                  </span>
+                )}
+                {container.ports && container.ports.split(',').map((port, idx) => (
+                  <span key={idx} className="text-[10px] font-mono text-slate-400 bg-slate-800/60 px-2 py-0.5 rounded border border-slate-700/50 break-all">
+                    {port.trim()}
+                  </span>
+                ))}
+              </div>
             </div>
-            <p className="text-xs text-[var(--color-dark-muted)] pl-4 truncate">{container.status}</p>
+            <p className="text-xs text-[var(--color-dark-muted)] pl-4 break-words">{container.status}</p>
           </div>
           {isProtected && (
-             <span className="ml-2 flex-shrink-0 text-[10px] font-mono text-emerald-500/80 px-2 py-0.5 rounded-full border border-emerald-500/20 uppercase tracking-widest bg-emerald-500/5">SYS</span>
+             <span className="ml-2 flex-shrink-0 text-[10px] font-mono text-emerald-500/80 px-2 py-0.5 rounded-full border border-emerald-500/20 uppercase tracking-widest bg-emerald-500/5 mt-1">SYS</span>
           )}
         </div>
 
