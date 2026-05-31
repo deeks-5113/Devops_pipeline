@@ -5,7 +5,7 @@ import axios from '../lib/axios';
 import toast from 'react-hot-toast';
 import { useMetricsHistory } from '../hooks/useMetricsHistory';
 import LogViewerModal from './LogViewerModal';
-import { Terminal, Folder, Home, RotateCw, Square, Play, GitPullRequest, Search, BarChart3 } from 'lucide-react';
+import { Terminal, Folder, Home, RotateCw, Square, Play, GitPullRequest, Search, BarChart3, Database, Layers3 } from 'lucide-react';
 import './CommandPalette.css'; // Custom styles for CMDK
 
 const CommandPalette = () => {
@@ -79,10 +79,22 @@ const CommandPalette = () => {
                 <Home className="w-4 h-4" /> <span>Dashboard Home</span>
               </Command.Item>
               <Command.Item 
-                onSelect={() => { navigate('/stats'); setOpen(false); }}
+                onSelect={() => { navigate('/stats/containers'); setOpen(false); }}
                 className="flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm text-slate-300 hover:bg-emerald-500/10 hover:text-emerald-400 aria-selected:bg-emerald-500/10 aria-selected:text-emerald-400 cursor-pointer"
               >
-                <BarChart3 className="w-4 h-4" /> <span>Stats</span>
+                <BarChart3 className="w-4 h-4" /> <span>Container Stats</span>
+              </Command.Item>
+              <Command.Item 
+                onSelect={() => { navigate('/stats/images'); setOpen(false); }}
+                className="flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm text-slate-300 hover:bg-emerald-500/10 hover:text-emerald-400 aria-selected:bg-emerald-500/10 aria-selected:text-emerald-400 cursor-pointer"
+              >
+                <Layers3 className="w-4 h-4" /> <span>Docker Images</span>
+              </Command.Item>
+              <Command.Item 
+                onSelect={() => { navigate('/stats/storage'); setOpen(false); }}
+                className="flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm text-slate-300 hover:bg-emerald-500/10 hover:text-emerald-400 aria-selected:bg-emerald-500/10 aria-selected:text-emerald-400 cursor-pointer"
+              >
+                <Database className="w-4 h-4" /> <span>Docker Storage</span>
               </Command.Item>
               {groups.map(g => (
                 <Command.Item 
