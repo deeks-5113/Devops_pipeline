@@ -5,7 +5,7 @@ import axios from '../lib/axios';
 import toast from 'react-hot-toast';
 import { useMetricsHistory } from '../hooks/useMetricsHistory';
 import LogViewerModal from './LogViewerModal';
-import { Terminal, Folder, Home, RotateCw, Square, Play, GitPullRequest, Search } from 'lucide-react';
+import { Terminal, Folder, Home, RotateCw, Square, Play, GitPullRequest, Search, BarChart3 } from 'lucide-react';
 import './CommandPalette.css'; // Custom styles for CMDK
 
 const CommandPalette = () => {
@@ -77,6 +77,12 @@ const CommandPalette = () => {
                 className="flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm text-slate-300 hover:bg-emerald-500/10 hover:text-emerald-400 aria-selected:bg-emerald-500/10 aria-selected:text-emerald-400 cursor-pointer"
               >
                 <Home className="w-4 h-4" /> <span>Dashboard Home</span>
+              </Command.Item>
+              <Command.Item 
+                onSelect={() => { navigate('/stats'); setOpen(false); }}
+                className="flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm text-slate-300 hover:bg-emerald-500/10 hover:text-emerald-400 aria-selected:bg-emerald-500/10 aria-selected:text-emerald-400 cursor-pointer"
+              >
+                <BarChart3 className="w-4 h-4" /> <span>Stats</span>
               </Command.Item>
               {groups.map(g => (
                 <Command.Item 

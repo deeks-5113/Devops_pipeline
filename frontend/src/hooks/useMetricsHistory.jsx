@@ -7,6 +7,8 @@ export const MetricsProvider = ({ children }) => {
   const [history, setHistory] = useState({});
   const [systemMetrics, setSystemMetrics] = useState({ cpu_percent: 0, ram_percent: 0 });
   const [allStats, setAllStats] = useState([]);
+  const [dockerImages, setDockerImages] = useState([]);
+  const [dockerStorage, setDockerStorage] = useState([]);
   const [isFetching, setIsFetching] = useState(false);
 
   // Poll every 10 seconds
@@ -16,6 +18,10 @@ export const MetricsProvider = ({ children }) => {
       const [sysRes, cRes] = await Promise.all([
         axios.get('/api/stats/system').catch(() => ({ data: { cpu_percent: 0, ram_percent: 0 } })),
         axios.get('/api/stats/containers').catch(() => ({ data: [] }))
+      ]);
+      const [imagesRes, storageRes] = await Promise.all([
+        axios.get('/api/stats/images').catch(() => ({ data: [] })),
+        axios.get('/api/stats/storage').catch(() => ({ data: [] }))
       ]);
 
       const now = Date.now();
@@ -27,6 +33,8 @@ export const MetricsProvider = ({ children }) => {
 
       setSystemMetrics(newSys);
       setAllStats(containers);
+      setDockerImages(imagesRes.data);
+      setDockerStorage(storageRes.data);
 
       setHistory(prev => {
         const next = { ...prev };
@@ -62,6 +70,8 @@ export const MetricsProvider = ({ children }) => {
       history,
       systemMetrics,
       allStats,
+      dockerImages,
+      dockerStorage,
       isFetching,
       forceFetch: fetchMetrics
     }}>

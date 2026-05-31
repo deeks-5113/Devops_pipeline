@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import FolderView from './pages/FolderView'
+import Stats from './pages/Stats'
 import DashboardLayout from './layouts/DashboardLayout'
 import ProtectedRoute from './components/ProtectedRoute'
 
@@ -15,6 +16,7 @@ function App() {
           <Route element={<DashboardLayout />}>
             <Route path="/"                  element={<Dashboard />} />
             <Route path="/folder/:groupId"   element={<FolderView />} />
+            <Route path="/stats"             element={<Stats />} />
           </Route>
         </Route>
         

@@ -73,12 +73,31 @@ class SystemMetrics(BaseModel):
     disk_free_gb: float
 
 class ContainerInfo(BaseModel):
+    container_id: str = ""
     name: str
     status: str
     ports: str
     cpu_perc: str = "N/A"
     mem_usage: str = "N/A"
+    mem_perc: str = "N/A"
+    net_io: str = "N/A"
+    block_io: str = "N/A"
+    pids: str = "N/A"
     folder: str = "N/A"
+
+class DockerImageInfo(BaseModel):
+    image_id: str
+    name: str
+    disk_usage: str = "N/A"
+    content_size: str = "N/A"
+    extra: str = ""
+
+class DockerStorageRow(BaseModel):
+    type: str
+    total: str
+    active: str
+    size: str
+    reclaimable: str
 
 class ActionResponse(BaseModel):
     status: str
@@ -182,6 +201,75 @@ def get_container_context(container_name: str) -> str:
     except Exception:
         return DEPLOY_DIR
 
+def run_command(command: List[str]) -> subprocess.CompletedProcess:
+    return subprocess.run(command, capture_output=True, text=True, check=True)
+
+def parse_json_lines(stdout: str) -> List[dict]:
+    rows: List[dict] = []
+    for line in stdout.strip().splitlines():
+        if not line:
+            continue
+        try:
+            rows.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+    return rows
+
+def normalize_image_name(repository: str, tag: str) -> str:
+    repo = repository or "<none>"
+    image_tag = tag or "<none>"
+    return f"{repo}:{image_tag}"
+
+def get_docker_image_rows() -> List[DockerImageInfo]:
+    try:
+        tree_rows = parse_json_lines(
+            run_command(["docker", "image", "ls", "--tree", "--format", "{{json .}}"]).stdout
+        )
+        images: List[DockerImageInfo] = []
+        for row in tree_rows:
+            image_id = row.get("ID") or row.get("ImageID") or row.get("IDShort") or ""
+            name = row.get("Image") or row.get("Repository") or row.get("Name") or "<none>:<none>"
+            images.append(DockerImageInfo(
+                image_id=image_id,
+                name=name,
+                disk_usage=row.get("DiskUsage") or row.get("Size") or "N/A",
+                content_size=row.get("ContentSize") or "N/A",
+                extra=row.get("Extra") or "",
+            ))
+        if images:
+            return images
+    except subprocess.CalledProcessError:
+        pass
+
+    fallback_rows = parse_json_lines(
+        run_command(["docker", "image", "ls", "--format", "{{json .}}"]).stdout
+    )
+    return [
+        DockerImageInfo(
+            image_id=row.get("ID", ""),
+            name=normalize_image_name(row.get("Repository", ""), row.get("Tag", "")),
+            disk_usage=row.get("Size", "N/A"),
+            content_size=row.get("Size", "N/A"),
+            extra="",
+        )
+        for row in fallback_rows
+    ]
+
+def get_docker_storage_rows() -> List[DockerStorageRow]:
+    rows = parse_json_lines(
+        run_command(["docker", "system", "df", "--format", "{{json .}}"]).stdout
+    )
+    return [
+        DockerStorageRow(
+            type=row.get("Type", ""),
+            total=str(row.get("TotalCount", "")),
+            active=str(row.get("Active", "")),
+            size=row.get("Size", "N/A"),
+            reclaimable=row.get("Reclaimable", "N/A"),
+        )
+        for row in rows
+    ]
+
 
 # ---------------------------------------------------------------------------
 # Auth
@@ -213,45 +301,52 @@ def get_system_stats(current_user: str = Depends(get_current_user)):
 @app.get("/api/stats/containers", response_model=List[ContainerInfo])
 def get_containers(current_user: str = Depends(get_current_user)):
     try:
-        ps_result = subprocess.run(
-            ["docker", "ps", "-a", "--format", '{"Names":"{{.Names}}", "Status":"{{.Status}}", "Ports":"{{.Ports}}"}'],
-            capture_output=True, text=True, check=True,
+        ps_rows = parse_json_lines(
+            run_command(["docker", "ps", "-a", "--format", "{{json .}}"]).stdout
         )
-        stats_result = subprocess.run(
-            ["docker", "stats", "--no-stream", "--format", '{"Name":"{{.Name}}", "CPUPerc":"{{.CPUPerc}}", "MemUsage":"{{.MemUsage}}"}'],
-            capture_output=True, text=True, check=True,
+        stats_rows = parse_json_lines(
+            run_command(["docker", "stats", "--no-stream", "--format", "{{json .}}"]).stdout
         )
-        stats_map: dict = {}
-        for line in stats_result.stdout.strip().split("\n"):
-            if not line:
-                continue
-            try:
-                d = json.loads(line)
-                stats_map[d.get("Name", "")] = d
-            except json.JSONDecodeError:
-                continue
+        stats_map = {row.get("Name", ""): row for row in stats_rows}
 
         containers = []
-        for line in ps_result.stdout.strip().split("\n"):
-            if not line:
-                continue
-            try:
-                d = json.loads(line)
-                name = d.get("Names", "")
-                st = stats_map.get(name, {})
-                containers.append(ContainerInfo(
-                    name=name,
-                    status=d.get("Status", ""),
-                    ports=d.get("Ports", ""),
-                    cpu_perc=st.get("CPUPerc", "N/A"),
-                    mem_usage=st.get("MemUsage", "N/A"),
-                    folder=get_container_context(name).split("/")[-1] or "N/A",
-                ))
-            except json.JSONDecodeError:
-                continue
+        for row in ps_rows:
+            name = row.get("Names", "")
+            stat = stats_map.get(name, {})
+            containers.append(ContainerInfo(
+                container_id=row.get("ID", ""),
+                name=name,
+                status=row.get("Status", ""),
+                ports=row.get("Ports", ""),
+                cpu_perc=stat.get("CPUPerc", "N/A"),
+                mem_usage=stat.get("MemUsage", "N/A"),
+                mem_perc=stat.get("MemPerc", "N/A"),
+                net_io=stat.get("NetIO", "N/A"),
+                block_io=stat.get("BlockIO", "N/A"),
+                pids=stat.get("PIDs", "N/A"),
+                folder=get_container_context(name).split("/")[-1] or "N/A",
+            ))
         return containers
     except subprocess.CalledProcessError:
         raise HTTPException(status_code=500, detail="Failed to retrieve docker container stats.")
+    except FileNotFoundError:
+        raise HTTPException(status_code=500, detail="Docker daemon not available.")
+
+@app.get("/api/stats/images", response_model=List[DockerImageInfo])
+def get_docker_images(current_user: str = Depends(get_current_user)):
+    try:
+        return get_docker_image_rows()
+    except subprocess.CalledProcessError:
+        raise HTTPException(status_code=500, detail="Failed to retrieve docker images.")
+    except FileNotFoundError:
+        raise HTTPException(status_code=500, detail="Docker daemon not available.")
+
+@app.get("/api/stats/storage", response_model=List[DockerStorageRow])
+def get_docker_storage(current_user: str = Depends(get_current_user)):
+    try:
+        return get_docker_storage_rows()
+    except subprocess.CalledProcessError:
+        raise HTTPException(status_code=500, detail="Failed to retrieve docker storage usage.")
     except FileNotFoundError:
         raise HTTPException(status_code=500, detail="Docker daemon not available.")
 
