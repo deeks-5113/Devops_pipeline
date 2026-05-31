@@ -220,21 +220,36 @@ def normalize_image_name(repository: str, tag: str) -> str:
     image_tag = tag or "<none>"
     return f"{repo}:{image_tag}"
 
+def parse_delimited_rows(stdout: str, columns: List[str], delimiter: str = "\t") -> List[dict]:
+    rows: List[dict] = []
+    for line in stdout.strip().splitlines():
+        if not line:
+            continue
+        parts = line.split(delimiter)
+        if len(parts) < len(columns):
+            parts += [""] * (len(columns) - len(parts))
+        rows.append({column: parts[index].strip() for index, column in enumerate(columns)})
+    return rows
+
 def get_docker_image_rows() -> List[DockerImageInfo]:
     try:
-        tree_rows = parse_json_lines(
-            run_command(["docker", "image", "ls", "--tree", "--format", "{{json .}}"]).stdout
+        tree_rows = parse_delimited_rows(
+            run_command([
+                "docker", "images",
+                "--format", "{{.Repository}}:{{.Tag}}\t{{.ID}}\t{{.DiskUsage}}\t{{.ContentSize}}\t{{.Extra}}"
+            ]).stdout,
+            ["name", "image_id", "disk_usage", "content_size", "extra"],
         )
         images: List[DockerImageInfo] = []
         for row in tree_rows:
-            image_id = row.get("ID") or row.get("ImageID") or row.get("IDShort") or ""
-            name = row.get("Image") or row.get("Repository") or row.get("Name") or "<none>:<none>"
+            if not row.get("name") and not row.get("image_id"):
+                continue
             images.append(DockerImageInfo(
-                image_id=image_id,
-                name=name,
-                disk_usage=row.get("DiskUsage") or row.get("Size") or "N/A",
-                content_size=row.get("ContentSize") or "N/A",
-                extra=row.get("Extra") or "",
+                image_id=row.get("image_id", ""),
+                name=row.get("name", "<none>:<none>"),
+                disk_usage=row.get("disk_usage") or "N/A",
+                content_size=row.get("content_size") or "N/A",
+                extra=row.get("extra") or "",
             ))
         if images:
             return images
